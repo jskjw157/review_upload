@@ -88,6 +88,30 @@
 | 패키지 관리 | npm |
 | 빌드 도구 | Electron Forge / Electron Builder |
 
+---
+
+## 🛠️ 개발 환경 요구사항
+
+- **Node.js:** v20 LTS 이상 (Electron Forge + Vite 개발 서버에 맞춘 버전)
+- **패키지 매니저:** `npm` (레포지토리의 `package-lock.json` 기준)
+
+---
+
+## 🚀 실행 및 빌드 스크립트
+
+| 스크립트 | 설명 | 주요 용도 |
+| --- | --- | --- |
+| `npm run dev` | `vite dev --config vite.renderer.config.ts`로 렌더러 개발 서버를 띄운 후, `electron-forge start`와 연계해 빠르게 UI를 확인할 때 사용 | 렌더러 핫리로드/스타일 확인 |
+| `npm run start` | Electron Forge가 메인 프로세스와 번들링된 렌더러를 포함해 앱을 기동 | 실제 Electron 앱 실행 확인 |
+| `npm run build` | 메인(`vite.main.config.ts`)과 렌더러(`vite.renderer.config.ts`)를 순차 빌드 | 배포용 산출물 생성 |
+
+빌드 결과물 경로는 다음과 같아.
+
+- 메인 프로세스: `.vite/build/main/main.js`
+- 렌더러: `.vite/build/renderer/main_window/index.html` (정적 자산 포함)
+
+---
+
 # **개발 Task**
 
 ---
@@ -247,6 +271,15 @@ API 호출 시 “토큰 만료” 에러가 발생하면 자동으로 **refres
 
 ---
 
+## 🗂️ TypeScript 소스 구조
+
+- `src/main/main.ts`: Electron 메인 프로세스 진입점. 개발/배포 빌드에서 렌더러 로딩 및 창 라이프사이클을 관리해.
+- `src/renderer/main.ts`: 브라우저 렌더러 진입점. 로그인 토글, 단건/일괄 업로드 폼 동작, 업로드 기록 렌더링을 담당해.
+- `src/renderer/services/mockReviewService.ts`: 실제 API 연동 전 단계에서 사용되는 모의 업로드 서비스.
+- `src/types/review.ts`: 리뷰 입력, 일괄 업로드 결과, 기록 아이템 등 공통 타입 정의.
+
+---
+
 ## 📺 웹 프로토타입 미리보기
 
-`index.html`을 브라우저에서 열면 로그인(모의), 단건 리뷰 업로드, CSV/XLSX 일괄 업로드, 업로드 기록 표시 등 README에 정리된 주요 흐름을 체험할 수 있는 정적 UI 프로토타입을 확인할 수 있어.
+`npm install` 후 `npm run start`로 Electron 앱을 실행하면 모의 로그인, 단건 리뷰 업로드, CSV/XLSX 일괄 업로드, 업로드 기록 표시까지 동작하는 렌더러 화면을 확인할 수 있어.
