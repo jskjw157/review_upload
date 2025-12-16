@@ -6,6 +6,11 @@ interface AppState {
   history: HistoryEntry[];
 }
 
+interface FormState {
+  reviewLog: string;
+  bulkLog: string;
+}
+
 interface UIElements {
   loginBtn: HTMLButtonElement;
   loginStatus: HTMLElement;
@@ -47,6 +52,11 @@ const appState: AppState = {
   history: [],
 };
 
+const formState: FormState = {
+  reviewLog: '',
+  bulkLog: '',
+};
+
 function renderHistory(entries: HistoryEntry[]): void {
   elements.historyList.innerHTML = '';
 
@@ -75,6 +85,16 @@ function parseScore(input: HTMLInputElement): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function setReviewLog(message: string): void {
+  formState.reviewLog = message;
+  elements.reviewLog.textContent = message;
+}
+
+function setBulkLog(message: string): void {
+  formState.bulkLog = message;
+  elements.bulkLog.textContent = message;
+}
+
 function ensureForm(event: SubmitEvent): asserts event is SubmitEvent & { currentTarget: HTMLFormElement } {
   if (!(event.currentTarget instanceof HTMLFormElement)) {
     throw new Error('Unexpected form submission target');
@@ -96,7 +116,7 @@ async function handleReviewSubmit(event: SubmitEvent): Promise<void> {
   const text = elements.reviewText.value.trim();
 
   if (!productId || !text || score === null) {
-    elements.reviewLog.textContent = '상품, 평점, 리뷰 내용을 모두 입력하세요.';
+    setReviewLog('상품, 평점, 리뷰 내용을 모두 입력하세요.');
     return;
   }
 
@@ -106,9 +126,9 @@ async function handleReviewSubmit(event: SubmitEvent): Promise<void> {
     text,
   };
 
-  elements.reviewLog.textContent = '리뷰 등록 요청 중…';
+  setReviewLog('리뷰 등록 요청 중…');
   const response = await submitReview(reviewInput);
-  elements.reviewLog.textContent = response.message;
+  setReviewLog(response.message);
   appendHistory(response.historyEntry);
   elements.reviewForm.reset();
 }
@@ -120,13 +140,13 @@ async function handleBulkSubmit(event: SubmitEvent): Promise<void> {
   const file = elements.bulkFileInput.files?.[0];
 
   if (!(file instanceof File)) {
-    elements.bulkLog.textContent = '업로드할 CSV 또는 XLSX 파일을 선택하세요.';
+    setBulkLog('업로드할 CSV 또는 XLSX 파일을 선택하세요.');
     return;
   }
 
-  elements.bulkLog.textContent = `${file.name} 처리 중…`;
+  setBulkLog(`${file.name} 처리 중…`);
   const response = await uploadBulk(file);
-  elements.bulkLog.textContent = response.message;
+  setBulkLog(response.message);
   appendHistory(response.historyEntry);
   elements.bulkFileInput.value = '';
 }

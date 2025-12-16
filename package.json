@@ -2,13 +2,13 @@
   "name": "review_upload",
   "version": "1.0.0",
   "description": "Electron + Node.js + TypeScript \uae30\ubc18\uc758 \ub85c\uceec \ub9ac\ubdf0 \uc5c5\ub85c\ub4dc \ud504\ub85c\ud1a0\ud0c0\uc785",
-  "main": ".vite/build/main/main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "start": "electron-forge start",
-    "dev": "vite dev --config vite.renderer.config.ts",
-    "build": "vite build --config vite.main.config.ts && vite build --config vite.renderer.config.ts",
-    "package": "electron-forge package",
-    "make": "electron-forge make",
+    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite dev --config vite.renderer.config.ts",
+    "dev:electron": "TS_NODE_TRANSPILE_ONLY=1 VITE_DEV_SERVER_URL=http://localhost:5173 NODE_ENV=development electron -r ts-node/register src/main/main.ts",
+    "build": "vite build --config vite.renderer.config.ts && vite build --config vite.main.config.ts",
+    "start": "npm run build && electron dist-electron/main.js",
     "test": "echo \"No tests configured\""
   },
   "keywords": [],
@@ -67,7 +67,9 @@
     "@electron-forge/maker-zip": "^7.10.2",
     "@electron-forge/plugin-vite": "^7.10.2",
     "@types/node": "^22.10.5",
+    "concurrently": "^9.1.2",
     "electron": "^39.2.7",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"
   }
