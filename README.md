@@ -244,3 +244,9 @@ API 호출 시 “토큰 만료” 에러가 발생하면 자동으로 **refres
 ✔ 카페24 Admin API는 **OAuth 2.0 인증 필수**이고, RESTful API로 JSON 요청/응답을 사용해. [Cafe24 개발자](https://developers.cafe24.com/docs/api/?utm_source=chatgpt.com)
 
 ✔ 리뷰 관련 API는 `POST /api/v2/admin/reviews` 같은 엔드포인트로 리뷰를 등록할 수 있어. [partners.cafe24.com](https://partners.cafe24.com/docs/en/api/admin/?utm_source=chatgpt.com)
+
+---
+
+## 📺 웹 프로토타입 미리보기
+
+`index.html`을 브라우저에서 열면 로그인(모의), 단건 리뷰 업로드, CSV/XLSX 일괄 업로드, 업로드 기록 표시 등 README에 정리된 주요 흐름을 체험할 수 있는 정적 UI 프로토타입을 확인할 수 있어.
