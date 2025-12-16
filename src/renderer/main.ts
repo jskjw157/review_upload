@@ -1,8 +1,5 @@
-interface HistoryEntry {
-  type: string;
-  status: string;
-  timestamp: string;
-}
+import { HistoryEntry, ReviewInput } from '../types/review';
+import { submitReview, uploadBulk } from './services/mockReviewService';
 
 interface AppState {
   isLoggedIn: boolean;
@@ -73,54 +70,65 @@ function appendHistory(entry: HistoryEntry): void {
   renderHistory(appState.history);
 }
 
+function parseScore(input: HTMLInputElement): number | null {
+  const value = Number.isNaN(input.valueAsNumber) ? null : input.valueAsNumber;
+  return Number.isFinite(value) ? value : null;
+}
+
+function ensureForm(event: SubmitEvent): asserts event is SubmitEvent & { currentTarget: HTMLFormElement } {
+  if (!(event.currentTarget instanceof HTMLFormElement)) {
+    throw new Error('Unexpected form submission target');
+  }
+}
+
 elements.loginBtn.addEventListener('click', () => {
   appState.isLoggedIn = !appState.isLoggedIn;
   elements.loginStatus.textContent = appState.isLoggedIn ? '로그인 완료 (mock)' : '로그아웃 상태';
   elements.loginStatus.classList.toggle('active', appState.isLoggedIn);
 });
 
-function handleReviewSubmit(event: SubmitEvent): void {
+async function handleReviewSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
-  const product = elements.productSelect.value;
-  const score = elements.scoreInput.value;
+  ensureForm(event);
+
+  const productId = elements.productSelect.value;
+  const score = parseScore(elements.scoreInput);
   const text = elements.reviewText.value.trim();
 
-  if (!product || !text) {
-    elements.reviewLog.textContent = '상품과 리뷰 내용을 모두 입력하세요.';
+  if (!productId || !text || score === null) {
+    elements.reviewLog.textContent = '상품, 평점, 리뷰 내용을 모두 입력하세요.';
     return;
   }
 
+  const reviewInput: ReviewInput = {
+    productId,
+    score,
+    text,
+  };
+
   elements.reviewLog.textContent = '리뷰 등록 요청 중…';
-  setTimeout(() => {
-    elements.reviewLog.textContent = '성공: 리뷰가 등록되었습니다. (Mock 응답)';
-    appendHistory({
-      type: '단건 업로드',
-      status: `성공 (평점 ${score})`,
-      timestamp: new Date().toLocaleString(),
-    });
-    elements.reviewForm.reset();
-  }, 600);
+  const response = await submitReview(reviewInput);
+  elements.reviewLog.textContent = response.message;
+  appendHistory(response.historyEntry);
+  elements.reviewForm.reset();
 }
 
-function handleBulkSubmit(event: SubmitEvent): void {
+async function handleBulkSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
+  ensureForm(event);
+
   const file = elements.bulkFileInput.files?.[0];
 
-  if (!file) {
+  if (!(file instanceof File)) {
     elements.bulkLog.textContent = '업로드할 CSV 또는 XLSX 파일을 선택하세요.';
     return;
   }
 
   elements.bulkLog.textContent = `${file.name} 처리 중…`;
-  setTimeout(() => {
-    elements.bulkLog.textContent = '완료: 12건 업로드 성공, 1건 실패 (Mock)';
-    appendHistory({
-      type: '일괄 업로드',
-      status: '완료',
-      timestamp: new Date().toLocaleString(),
-    });
-    elements.bulkFileInput.value = '';
-  }, 900);
+  const response = await uploadBulk(file);
+  elements.bulkLog.textContent = response.message;
+  appendHistory(response.historyEntry);
+  elements.bulkFileInput.value = '';
 }
 
 elements.reviewForm.addEventListener('submit', handleReviewSubmit);
