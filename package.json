@@ -1,19 +1,74 @@
 {
   "name": "review_upload",
   "version": "1.0.0",
-  "description": "Electron + Node.js + TypeScript 기반의 로컬 리뷰 업로드 프로토타입",
-  "main": "dist/main.js",
+  "description": "Electron + Node.js + TypeScript \uae30\ubc18\uc758 \ub85c\uceec \ub9ac\ubdf0 \uc5c5\ub85c\ub4dc \ud504\ub85c\ud1a0\ud0c0\uc785",
+  "main": ".vite/build/main/main.js",
   "scripts": {
-    "build": "esbuild src/renderer/main.ts --bundle --format=esm --outfile=dist/main.js --platform=browser --sourcemap",
-    "dev": "esbuild src/renderer/main.ts --bundle --format=esm --outfile=dist/main.js --platform=browser --sourcemap --watch",
+    "start": "electron-forge start",
+    "dev": "vite dev --config vite.renderer.config.ts",
+    "build": "vite build --config vite.main.config.ts && vite build --config vite.renderer.config.ts",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
     "test": "echo \"No tests configured\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "config": {
+    "forge": {
+      "packagerConfig": {},
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {}
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "darwin"
+          ]
+        },
+        {
+          "name": "@electron-forge/maker-deb",
+          "config": {}
+        },
+        {
+          "name": "@electron-forge/maker-rpm",
+          "config": {}
+        }
+      ],
+      "plugins": [
+        [
+          "@electron-forge/plugin-vite",
+          {
+            "build": [
+              {
+                "entry": "src/main/main.ts",
+                "config": "vite.main.config.ts"
+              }
+            ],
+            "renderer": [
+              {
+                "name": "main_window",
+                "config": "vite.renderer.config.ts"
+              }
+            ]
+          }
+        ]
+      ]
+    }
+  },
   "devDependencies": {
-    "esbuild": "^0.27.1",
-    "typescript": "^5.9.3"
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@types/node": "^22.10.5",
+    "electron": "^39.2.7",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
   }
 }
