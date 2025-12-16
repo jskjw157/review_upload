@@ -1,26 +1,19 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 
-// Provided by @electron-forge/plugin-vite for dev/prod switching
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
-declare const MAIN_WINDOW_VITE_NAME: string;
+const isDev = process.env.NODE_ENV === 'development';
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 
 let mainWindow: BrowserWindow | null = null;
 
 async function loadRendererContent(window: BrowserWindow) {
-  if (process.env.NODE_ENV === 'development' && MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    await window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  if (isDev && devServerUrl) {
+    await window.loadURL(devServerUrl);
     window.webContents.openDevTools({ mode: 'detach' });
     return;
   }
 
-  const indexHtml = path.join(
-    __dirname,
-    '..',
-    'renderer',
-    MAIN_WINDOW_VITE_NAME,
-    'index.html'
-  );
+  const indexHtml = path.join(__dirname, '..', 'dist', 'index.html');
   await window.loadFile(indexHtml);
 }
 

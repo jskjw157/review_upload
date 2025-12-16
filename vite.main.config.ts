@@ -4,7 +4,7 @@ import path from 'node:path';
 
 export default defineConfig({
   build: {
-    outDir: '.vite/build/main',
+    outDir: 'dist-electron',
     sourcemap: true,
     target: 'node18',
     lib: {
@@ -15,6 +15,6 @@ export default defineConfig({
     rollupOptions: {
       external: ['electron', ...builtinModules, ...builtinModules.map((item) => `node:${item}`)],
     },
-    emptyOutDir: false,
+    emptyOutDir: true,
   },
 });

@@ -5,11 +5,15 @@ export default defineConfig({
   root: __dirname,
   base: './',
   build: {
-    outDir: '.vite/build/renderer/main_window',
+    outDir: 'dist',
     emptyOutDir: true,
     sourcemap: true,
     rollupOptions: {
       input: path.resolve(__dirname, 'index.html'),
+      output: {
+        entryFileNames: 'main.js',
+        assetFileNames: '[name][extname]',
+      },
     },
   },
   server: {
