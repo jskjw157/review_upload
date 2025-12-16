@@ -1,0 +1,19 @@
+{
+  "name": "review_upload",
+  "version": "1.0.0",
+  "description": "Electron + Node.js + TypeScript 기반의 로컬 리뷰 업로드 프로토타입",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "esbuild src/renderer/main.ts --bundle --format=esm --outfile=dist/main.js --platform=browser --sourcemap",
+    "dev": "esbuild src/renderer/main.ts --bundle --format=esm --outfile=dist/main.js --platform=browser --sourcemap --watch",
+    "test": "echo \"No tests configured\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "esbuild": "^0.27.1",
+    "typescript": "^5.9.3"
+  }
+}
