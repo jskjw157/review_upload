@@ -8,9 +8,12 @@ export default defineConfig({
     sourcemap: true,
     target: 'node18',
     lib: {
-      entry: path.resolve(__dirname, 'src/main/main.ts'),
+      entry: {
+        main: path.resolve(__dirname, 'src/main/main.ts'),
+        preload: path.resolve(__dirname, 'src/main/preload.ts'),
+      },
       formats: ['cjs'],
-      fileName: () => 'main.js',
+      fileName: (_, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       external: ['electron', ...builtinModules, ...builtinModules.map((item) => `node:${item}`)],

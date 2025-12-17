@@ -1,5 +1,6 @@
+import type { OAuthConfig } from '../main/services/auth';
+import type { BulkChannelResponse, ReviewChannelResponse } from '../types/ipc';
 import { HistoryEntry, ReviewInput } from '../types/review';
-import { submitReview, uploadBulk } from './services/mockReviewService';
 
 interface AppState {
   isLoggedIn: boolean;
@@ -57,6 +58,23 @@ const formState: FormState = {
   bulkLog: '',
 };
 
+function hasAuthConfig(config: OAuthConfig): boolean {
+  return Boolean(config.mallId && config.clientId && config.clientSecret && config.redirectUri);
+}
+
+function setLoginState(isLoggedIn: boolean, message: string): void {
+  appState.isLoggedIn = isLoggedIn;
+  elements.loginStatus.textContent = message;
+  elements.loginStatus.classList.toggle('active', isLoggedIn);
+}
+
+const authConfig: OAuthConfig = {
+  mallId: import.meta.env.VITE_CAFE24_MALL_ID ?? '',
+  clientId: import.meta.env.VITE_CAFE24_CLIENT_ID ?? '',
+  clientSecret: import.meta.env.VITE_CAFE24_CLIENT_SECRET ?? '',
+  redirectUri: import.meta.env.VITE_CAFE24_REDIRECT_URI ?? '',
+};
+
 function renderHistory(entries: HistoryEntry[]): void {
   elements.historyList.innerHTML = '';
 
@@ -101,10 +119,41 @@ function ensureForm(event: SubmitEvent): asserts event is SubmitEvent & { curren
   }
 }
 
-elements.loginBtn.addEventListener('click', () => {
-  appState.isLoggedIn = !appState.isLoggedIn;
-  elements.loginStatus.textContent = appState.isLoggedIn ? '로그인 완료 (mock)' : '로그아웃 상태';
-  elements.loginStatus.classList.toggle('active', appState.isLoggedIn);
+function handleAuthResult(result: Awaited<ReturnType<typeof window.reviewApi.exchangeAuthCode>>): void {
+  if (result.success) {
+    setLoginState(true, '로그인 완료 (토큰 저장됨)');
+    return;
+  }
+
+  setLoginState(false, result.message);
+}
+
+async function restoreAuthState(): Promise<void> {
+  const stored = await window.reviewApi.loadStoredTokens();
+  if (stored.success) {
+    setLoginState(true, '로그인 완료 (저장된 토큰)');
+    return;
+  }
+
+  setLoginState(false, '로그아웃 상태');
+}
+
+elements.loginBtn.addEventListener('click', async () => {
+  if (!hasAuthConfig(authConfig)) {
+    setLoginState(false, '환경 변수에서 클라이언트 정보를 설정하세요.');
+    return;
+  }
+
+  const code = window.prompt('카페24 인증 코드를 입력하세요.');
+
+  if (!code) {
+    setLoginState(false, '인증 코드가 필요합니다.');
+    return;
+  }
+
+  setLoginState(false, '인증 코드 교환 중…');
+  const result = await window.reviewApi.exchangeAuthCode({ code, config: authConfig });
+  handleAuthResult(result);
 });
 
 async function handleReviewSubmit(event: SubmitEvent): Promise<void> {
@@ -126,11 +175,30 @@ async function handleReviewSubmit(event: SubmitEvent): Promise<void> {
     text,
   };
 
+  if (!appState.isLoggedIn) {
+    setReviewLog('로그인이 필요합니다. OAuth 2.0 인증 후 다시 시도하세요.');
+    return;
+  }
+
   setReviewLog('리뷰 등록 요청 중…');
-  const response = await submitReview(reviewInput);
+  const response: ReviewChannelResponse = await window.reviewApi.submitReview({
+    input: reviewInput,
+    config: authConfig,
+  });
+
   setReviewLog(response.message);
-  appendHistory(response.historyEntry);
-  elements.reviewForm.reset();
+
+  if (response.historyEntry) {
+    appendHistory(response.historyEntry);
+  }
+
+  if (response.needsReauth) {
+    setLoginState(false, '토큰이 만료되어 로그아웃되었습니다. 다시 로그인하세요.');
+  }
+
+  if (response.success) {
+    elements.reviewForm.reset();
+  }
 }
 
 async function handleBulkSubmit(event: SubmitEvent): Promise<void> {
@@ -144,14 +212,36 @@ async function handleBulkSubmit(event: SubmitEvent): Promise<void> {
     return;
   }
 
+  if (!appState.isLoggedIn) {
+    setBulkLog('로그인이 필요합니다. OAuth 2.0 인증 후 다시 시도하세요.');
+    return;
+  }
+
   setBulkLog(`${file.name} 처리 중…`);
-  const response = await uploadBulk(file);
+
+  const response: BulkChannelResponse = await window.reviewApi.uploadBulk({
+    fileName: file.name,
+    fileBuffer: await file.arrayBuffer(),
+    config: authConfig,
+  });
+
   setBulkLog(response.message);
-  appendHistory(response.historyEntry);
-  elements.bulkFileInput.value = '';
+
+  if (response.historyEntry) {
+    appendHistory(response.historyEntry);
+  }
+
+  if (response.needsReauth) {
+    setLoginState(false, '토큰이 만료되어 로그아웃되었습니다. 다시 로그인하세요.');
+  }
+
+  if (response.success) {
+    elements.bulkFileInput.value = '';
+  }
 }
 
 elements.reviewForm.addEventListener('submit', handleReviewSubmit);
 elements.bulkForm.addEventListener('submit', handleBulkSubmit);
 
+void restoreAuthState();
 renderHistory(appState.history);
