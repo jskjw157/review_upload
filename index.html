@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cafe24 Local Review Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <h1>Cafe24 Local Review Manager</h1>
+      <p>Electron + Node.js + TypeScript 기반의 로컬 리뷰 자동 등록 앱 프로토타입</p>
+      <div class="hero__actions">
+        <button id="login-btn" class="btn primary">OAuth 2.0 로그인</button>
+        <span id="login-status" class="status muted">로그아웃 상태</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card grid two-cols" aria-labelledby="single-upload-title">
+      <div>
+        <h2 id="single-upload-title">단건 리뷰 등록</h2>
+        <p class="muted">상품 선택 후 텍스트, 별점, 이미지(옵션)를 입력해 리뷰를 등록하세요.</p>
+        <form id="review-form" class="form">
+          <label class="form__field">
+            <span>상품</span>
+            <select id="product-select" required>
+              <option value="" disabled selected>상품을 선택하세요</option>
+              <option>원두 세트</option>
+              <option>에스프레소 머신</option>
+              <option>텀블러</option>
+            </select>
+          </label>
+          <label class="form__field">
+            <span>별점</span>
+            <input id="score" type="number" min="1" max="5" value="5" required />
+          </label>
+          <label class="form__field">
+            <span>리뷰 내용</span>
+            <textarea id="review-text" rows="4" placeholder="제품에 대한 솔직한 후기를 작성해주세요." required></textarea>
+          </label>
+          <label class="form__field">
+            <span>이미지 업로드 (옵션)</span>
+            <input id="image-upload" type="file" accept="image/*" />
+          </label>
+          <button type="submit" class="btn">리뷰 업로드</button>
+        </form>
+        <div id="review-log" class="log" aria-live="polite"></div>
+      </div>
+      <aside class="panel">
+        <h3>인증 & 토큰 관리</h3>
+        <ul>
+          <li>OAuth 2.0으로 로그인하고 토큰을 로컬에 저장합니다.</li>
+          <li>토큰 만료 시 자동 갱신 로직을 처리합니다.</li>
+          <li>API 호출 시 액세스 토큰을 포함해 리뷰를 등록합니다.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="card grid two-cols" aria-labelledby="bulk-upload-title">
+      <div>
+        <h2 id="bulk-upload-title">자동 업로드 모드</h2>
+        <p class="muted">CSV / XLSX 파일을 선택해 여러 리뷰를 한 번에 업로드합니다.</p>
+        <form id="bulk-form" class="form">
+          <label class="form__field">
+            <span>업로드 파일</span>
+            <input id="bulk-file" type="file" accept=".csv,.xlsx" required />
+          </label>
+          <button type="submit" class="btn secondary">일괄 업로드 실행</button>
+        </form>
+        <div id="bulk-log" class="log" aria-live="polite"></div>
+      </div>
+      <aside class="panel">
+        <h3>업로드 로그</h3>
+        <ul id="history-list" class="history">
+          <li class="muted">아직 업로드 기록이 없습니다.</li>
+        </ul>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>네트워크 오류 재시도, 토큰 만료 시 갱신, 다크/라이트 모드와 같은 추가 기능을 염두에 둔 프로토타입입니다.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="dist/main.js"></script>
+</body>
+</html>
