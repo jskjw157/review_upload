@@ -2,3 +2,8 @@ node_modules
 /dist
 /dist-electron
 .vite
+
+# 환경 변수 (민감정보)
+.env
+.env.local
+.env.*.local

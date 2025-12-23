@@ -1,0 +1,201 @@
+---
+description: Vite + Electron 빌드 최적화 및 설정 가이드
+globs: ["vite.*.config.ts", "vite.config.ts"]
+alwaysApply: false
+---
+
+# Vite + Electron 빌드 최적화
+
+## 🏗️ 멀티 빌드 설정
+
+Electron 프로젝트는 Main과 Renderer를 위한 별도 Vite 설정이 필요합니다.
+
+### 파일 구조
+```
+├── vite.main.config.ts      # Main Process 빌드
+├── vite.renderer.config.ts  # Renderer Process 빌드
+└── vite.preload.config.ts   # Preload 스크립트 (선택적)
+```
+
+## ⚙️ Main Process 설정 (vite.main.config.ts)
+
+```typescript
+import { defineConfig } from 'vite';
+import path from 'node:path';
+
+export default defineConfig({
+  build: {
+    // Node.js 환경 타겟
+    target: 'node18',
+    outDir: 'dist-electron',
+    lib: {
+      entry: 'src/main/main.ts',
+      formats: ['cjs'],
+      fileName: () => 'main.js',
+    },
+    rollupOptions: {
+      // Electron 및 Node.js 내장 모듈 외부화
+      external: ['electron', ...builtinModules],
+    },
+    minify: false,
+    sourcemap: true,
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
+});
+```
+
+## 🎨 Renderer Process 설정 (vite.renderer.config.ts)
+
+```typescript
+import { defineConfig } from 'vite';
+import path from 'node:path';
+
+export default defineConfig({
+  root: '.',
+  base: './', // 상대 경로 사용 (패키징 시 중요)
+  build: {
+    target: 'chrome120', // Electron의 Chromium 버전에 맞춤
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: path.resolve(__dirname, 'index.html'),
+    },
+  },
+  // 개발 서버 설정
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+});
+```
+
+## 🚀 빌드 최적화 전략
+
+### 1. 코드 스플리팅
+```typescript
+// Renderer의 rollupOptions
+rollupOptions: {
+  output: {
+    manualChunks: {
+      vendor: ['react', 'react-dom'],
+      utils: ['lodash-es', 'date-fns'],
+    },
+  },
+}
+```
+
+### 2. 트리 쉐이킹 최적화
+```typescript
+// 사이드 이펙트 없는 모듈 표시 (package.json)
+{
+  "sideEffects": false
+}
+
+// 또는 특정 파일만 사이드 이펙트 있음
+{
+  "sideEffects": ["*.css", "*.scss"]
+}
+```
+
+### 3. 외부 모듈 처리
+```typescript
+// Main Process에서 외부화할 모듈
+import { builtinModules } from 'node:module';
+
+const external = [
+  'electron',
+  ...builtinModules,
+  ...builtinModules.map(m => `node:${m}`),
+];
+```
+
+## 📦 패키징 고려사항
+
+### asar 패키징과 호환성
+```typescript
+// 네이티브 모듈 사용 시
+rollupOptions: {
+  external: ['better-sqlite3', 'sharp'], // 네이티브 모듈 외부화
+}
+```
+
+### 리소스 경로 처리
+```typescript
+// 개발과 프로덕션에서 다른 경로
+const resourcePath = app.isPackaged
+  ? path.join(process.resourcesPath, 'assets')
+  : path.join(__dirname, '..', 'assets');
+```
+
+## 🔧 개발 워크플로우 최적화
+
+### Hot Reload 설정
+```typescript
+// 개발 스크립트 (package.json)
+{
+  "scripts": {
+    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite dev --config vite.renderer.config.ts",
+    "dev:electron": "VITE_DEV_SERVER_URL=http://localhost:5173 electron ."
+  }
+}
+```
+
+### 환경 변수 관리
+```typescript
+// Main Process에서 Vite 개발 서버 URL 감지
+const isDev = process.env.NODE_ENV === 'development';
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+
+if (isDev && devServerUrl) {
+  await window.loadURL(devServerUrl);
+} else {
+  await window.loadFile('dist/index.html');
+}
+```
+
+## 📊 번들 분석
+
+```typescript
+// vite.config.ts에 추가
+import { visualizer } from 'rollup-plugin-visualizer';
+
+plugins: [
+  visualizer({
+    filename: 'bundle-stats.html',
+    open: true,
+    gzipSize: true,
+  }),
+]
+```
+
+## ⚠️ 일반적인 함정
+
+### 1. __dirname 문제
+```typescript
+// ESM에서 __dirname 사용
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+```
+
+### 2. 상대 경로 vs 절대 경로
+```typescript
+// ❌ BAD: 개발에서만 동작
+await window.loadFile('/dist/index.html');
+
+// ✅ GOOD: 패키징 후에도 동작
+await window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+```
+
+### 3. CSS 경로 문제
+```typescript
+// base를 상대 경로로 설정
+base: './',  // '/' 대신 './' 사용
+```

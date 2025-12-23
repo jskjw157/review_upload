@@ -7,7 +7,7 @@ import {
   ReviewChannelResponse,
   ReviewRequestPayload,
 } from '../types/ipc';
-import { OAuthConfig } from './services/auth';
+import { OAuthConfig, OAuthFlowConfig, OAuthFlowResult } from './services/auth';
 
 type Invoke<T, P = void> = P extends void ? () => Promise<T> : (payload: P) => Promise<T>;
 
@@ -21,6 +21,10 @@ const api = {
     OAuthConfig
   >,
   loadStoredTokens: (() => ipcRenderer.invoke('auth:load')) as Invoke<AuthChannelResponse>,
+  startOAuthFlow: ((config: OAuthFlowConfig) => ipcRenderer.invoke('auth:start-flow', config)) as Invoke<
+    OAuthFlowResult,
+    OAuthFlowConfig
+  >,
   submitReview: ((payload: ReviewRequestPayload) => ipcRenderer.invoke('review:submit', payload)) as Invoke<
     ReviewChannelResponse,
     ReviewRequestPayload

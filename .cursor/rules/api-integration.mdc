@@ -1,0 +1,393 @@
+---
+description: 외부 API 연동 가이드 - HTTP 클라이언트, 에러 처리, 재시도 로직
+globs: ["src/main/services/**/*.ts", "src/renderer/services/**/*.ts"]
+alwaysApply: false
+---
+
+# API 연동 가이드
+
+## 🌐 HTTP 클라이언트 패턴
+
+### 기본 HTTP 클라이언트 구조
+```typescript
+interface HttpClientConfig {
+  baseUrl: string;
+  timeout?: number;
+  defaultHeaders?: Record<string, string>;
+}
+
+interface RequestOptions {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  params?: Record<string, string>;
+}
+
+interface ApiResponse<T> {
+  data: T;
+  status: number;
+  headers: Headers;
+}
+
+class HttpClient {
+  constructor(private config: HttpClientConfig) {}
+  
+  async request<T>(options: RequestOptions): Promise<ApiResponse<T>> {
+    const url = this.buildUrl(options.path, options.params);
+    const headers = {
+      ...this.config.defaultHeaders,
+      ...options.headers,
+    };
+    
+    const response = await fetch(url, {
+      method: options.method,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(response.status, await response.text());
+    }
+    
+    return {
+      data: await response.json(),
+      status: response.status,
+      headers: response.headers,
+    };
+  }
+  
+  // 편의 메서드
+  get<T>(path: string, params?: Record<string, string>) {
+    return this.request<T>({ method: 'GET', path, params });
+  }
+  
+  post<T>(path: string, body: unknown) {
+    return this.request<T>({ method: 'POST', path, body });
+  }
+}
+```
+
+## ⚠️ 에러 처리
+
+### API 에러 클래스 계층
+```typescript
+// 기본 API 에러
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public message: string,
+    public code?: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+  
+  static isApiError(error: unknown): error is ApiError {
+    return error instanceof ApiError;
+  }
+}
+
+// 인증 관련 에러
+export class AuthError extends ApiError {
+  constructor(message: string, details?: unknown) {
+    super(401, message, 'AUTH_ERROR', details);
+    this.name = 'AuthError';
+  }
+}
+
+// 토큰 만료 에러
+export class TokenExpiredError extends AuthError {
+  constructor() {
+    super('Access token has expired');
+    this.name = 'TokenExpiredError';
+  }
+}
+
+// 요청 제한 에러
+export class RateLimitError extends ApiError {
+  constructor(
+    public retryAfter: number,
+    details?: unknown
+  ) {
+    super(429, `Rate limited. Retry after ${retryAfter}s`, 'RATE_LIMIT', details);
+    this.name = 'RateLimitError';
+  }
+}
+```
+
+### 에러 핸들링 패턴
+```typescript
+async function callApi<T>(
+  request: () => Promise<T>,
+  onTokenExpired?: () => Promise<void>
+): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    // 토큰 만료 시 자동 갱신 후 재시도
+    if (error instanceof TokenExpiredError && onTokenExpired) {
+      await onTokenExpired();
+      return await request();
+    }
+    
+    // Rate Limit 처리
+    if (error instanceof RateLimitError) {
+      await delay(error.retryAfter * 1000);
+      return await request();
+    }
+    
+    throw error;
+  }
+}
+```
+
+## 🔄 재시도 로직
+
+### 지수 백오프 (Exponential Backoff)
+```typescript
+interface RetryConfig {
+  maxRetries: number;
+  baseDelay: number;      // ms
+  maxDelay: number;       // ms
+  shouldRetry: (error: unknown) => boolean;
+}
+
+const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  baseDelay: 1000,
+  maxDelay: 10000,
+  shouldRetry: (error) => {
+    if (error instanceof ApiError) {
+      // 5xx 에러와 일부 4xx 에러만 재시도
+      return error.status >= 500 || error.status === 429;
+    }
+    // 네트워크 에러 재시도
+    return error instanceof TypeError;
+  },
+};
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  config: Partial<RetryConfig> = {}
+): Promise<T> {
+  const { maxRetries, baseDelay, maxDelay, shouldRetry } = {
+    ...DEFAULT_RETRY_CONFIG,
+    ...config,
+  };
+  
+  let lastError: unknown;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      
+      if (attempt === maxRetries || !shouldRetry(error)) {
+        throw error;
+      }
+      
+      // 지수 백오프 + 지터(jitter)
+      const delay = Math.min(
+        baseDelay * Math.pow(2, attempt) + Math.random() * 1000,
+        maxDelay
+      );
+      
+      console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
+```
+
+## 📊 요청 대기열 (Rate Limiting)
+
+### 요청 제한 관리
+```typescript
+class RequestQueue {
+  private queue: Array<() => Promise<void>> = [];
+  private isProcessing = false;
+  private lastRequestTime = 0;
+  
+  constructor(
+    private minInterval: number = 100 // ms between requests
+  ) {}
+  
+  async enqueue<T>(request: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await request();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      
+      this.processQueue();
+    });
+  }
+  
+  private async processQueue() {
+    if (this.isProcessing || this.queue.length === 0) return;
+    
+    this.isProcessing = true;
+    
+    while (this.queue.length > 0) {
+      const elapsed = Date.now() - this.lastRequestTime;
+      const waitTime = Math.max(0, this.minInterval - elapsed);
+      
+      if (waitTime > 0) {
+        await delay(waitTime);
+      }
+      
+      const task = this.queue.shift();
+      if (task) {
+        this.lastRequestTime = Date.now();
+        await task();
+      }
+    }
+    
+    this.isProcessing = false;
+  }
+}
+```
+
+## 🔐 인증 토큰 관리
+
+### 자동 토큰 갱신 래퍼
+```typescript
+interface TokenManager {
+  getAccessToken(): Promise<string>;
+  refreshAccessToken(): Promise<string>;
+  isTokenExpired(): boolean;
+}
+
+function createAuthenticatedClient(
+  baseClient: HttpClient,
+  tokenManager: TokenManager
+): HttpClient {
+  return {
+    async request<T>(options: RequestOptions): Promise<ApiResponse<T>> {
+      // 토큰 만료 임박 시 미리 갱신
+      if (tokenManager.isTokenExpired()) {
+        await tokenManager.refreshAccessToken();
+      }
+      
+      const token = await tokenManager.getAccessToken();
+      const authOptions = {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: `Bearer ${token}`,
+        },
+      };
+      
+      try {
+        return await baseClient.request<T>(authOptions);
+      } catch (error) {
+        // 401 에러 시 토큰 갱신 후 재시도
+        if (error instanceof ApiError && error.status === 401) {
+          const newToken = await tokenManager.refreshAccessToken();
+          authOptions.headers.Authorization = `Bearer ${newToken}`;
+          return await baseClient.request<T>(authOptions);
+        }
+        throw error;
+      }
+    },
+  };
+}
+```
+
+## 📦 응답 캐싱
+
+### 간단한 캐시 구현
+```typescript
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+class ResponseCache {
+  private cache = new Map<string, CacheEntry<unknown>>();
+  
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data as T;
+  }
+  
+  set<T>(key: string, data: T, ttlMs: number): void {
+    this.cache.set(key, {
+      data,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }
+  
+  invalidate(keyPattern?: RegExp): void {
+    if (!keyPattern) {
+      this.cache.clear();
+      return;
+    }
+    
+    for (const key of this.cache.keys()) {
+      if (keyPattern.test(key)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+// 캐싱 래퍼
+async function cachedRequest<T>(
+  cache: ResponseCache,
+  cacheKey: string,
+  ttlMs: number,
+  request: () => Promise<T>
+): Promise<T> {
+  const cached = cache.get<T>(cacheKey);
+  if (cached) return cached;
+  
+  const data = await request();
+  cache.set(cacheKey, data, ttlMs);
+  return data;
+}
+```
+
+## 🛠️ 유틸리티 함수
+
+```typescript
+// 딜레이
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// URL 빌드
+function buildUrl(base: string, path: string, params?: Record<string, string>): string {
+  const url = new URL(path, base);
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+  }
+  return url.toString();
+}
+
+// 응답 유효성 검사
+function assertResponse<T>(
+  response: unknown,
+  validator: (data: unknown) => data is T
+): asserts response is T {
+  if (!validator(response)) {
+    throw new ApiError(500, 'Invalid response format');
+  }
+}
+```

@@ -1,0 +1,244 @@
+---
+description: TypeScript/JavaScript 코드 품질 가이드라인 - DRY, SOLID, 클린 코드 원칙
+globs: ["**/*.ts", "**/*.js"]
+alwaysApply: false
+---
+
+# 코드 품질 가이드라인
+
+## 🎯 핵심 마인드셋
+
+> "Lines of code = Debt (코드 줄 수 = 부채)"
+
+1. **단순함**: 간단하고 직관적인 코드 작성
+2. **가독성**: 읽기 쉽고 이해하기 쉬운 코드
+3. **성능**: 가독성을 해치지 않는 범위 내에서 최적화
+4. **유지보수성**: 쉽게 수정하고 확장할 수 있는 코드
+5. **테스트 용이성**: 테스트하기 쉬운 구조
+
+## ✅ 코딩 가이드라인
+
+### 1. Early Return 패턴 사용
+
+```typescript
+// ❌ BAD: 중첩된 조건문
+async function processReview(review: Review) {
+  if (review) {
+    if (review.content) {
+      if (review.content.length > 0) {
+        // 실제 로직
+        return await submitReview(review);
+      }
+    }
+  }
+  throw new Error('Invalid review');
+}
+
+// ✅ GOOD: Early Return으로 가독성 향상
+async function processReview(review: Review) {
+  if (!review) throw new Error('Review is required');
+  if (!review.content) throw new Error('Content is required');
+  if (review.content.length === 0) throw new Error('Content cannot be empty');
+  
+  return await submitReview(review);
+}
+```
+
+### 2. 설명적인 이름 사용
+
+```typescript
+// ❌ BAD: 불명확한 이름
+const d = new Date();
+const x = reviews.filter(r => r.s === 'active');
+function proc(data) { ... }
+
+// ✅ GOOD: 명확한 이름
+const currentDate = new Date();
+const activeReviews = reviews.filter(review => review.status === 'active');
+async function processReviewUpload(reviewData: ReviewInput) { ... }
+
+// 이벤트 핸들러는 handle 접두사 사용
+function handleFileSelect() { ... }
+function handleFormSubmit() { ... }
+function handleAuthCallback() { ... }
+```
+
+### 3. 상수 vs 함수
+
+```typescript
+// ❌ BAD: 불필요한 함수
+function getApiBaseUrl() {
+  return 'https://api.cafe24.com';
+}
+
+// ✅ GOOD: 상수 사용
+const API_BASE_URL = 'https://api.cafe24.com' as const;
+
+// 타입과 함께 사용
+const REVIEW_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+
+type ReviewStatus = typeof REVIEW_STATUS[keyof typeof REVIEW_STATUS];
+```
+
+### 4. DRY (Don't Repeat Yourself)
+
+```typescript
+// ❌ BAD: 중복 코드
+async function uploadSingleReview(review: Review) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(review) });
+  return response.json();
+}
+
+async function uploadBulkReviews(reviews: Review[]) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(reviews) });
+  return response.json();
+}
+
+// ✅ GOOD: 공통 로직 추출
+function createAuthHeaders(token: string): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+}
+
+async function postRequest<T>(url: string, data: T, token: string) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: createAuthHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+```
+
+### 5. 불변성 선호
+
+```typescript
+// ❌ BAD: 가변 객체
+const config = { apiUrl: '', token: '' };
+config.apiUrl = 'https://api.cafe24.com';
+config.token = 'abc123';
+
+// ✅ GOOD: 불변 객체
+const config = Object.freeze({
+  apiUrl: 'https://api.cafe24.com',
+  token: 'abc123',
+});
+
+// 배열 조작도 불변하게
+// ❌ BAD
+reviews.push(newReview);
+
+// ✅ GOOD
+const updatedReviews = [...reviews, newReview];
+```
+
+### 6. 함수 순서 규칙
+
+```typescript
+// 상위 함수가 먼저, 구성 요소 함수가 나중에
+export async function uploadReviews(reviews: Review[]) {
+  const validReviews = validateReviews(reviews);
+  const formattedReviews = formatReviews(validReviews);
+  return await submitReviews(formattedReviews);
+}
+
+// 헬퍼 함수들
+function validateReviews(reviews: Review[]): Review[] {
+  return reviews.filter(isValidReview);
+}
+
+function formatReviews(reviews: Review[]): FormattedReview[] {
+  return reviews.map(formatSingleReview);
+}
+
+function isValidReview(review: Review): boolean {
+  return review.content.length > 0 && review.rating > 0;
+}
+
+function formatSingleReview(review: Review): FormattedReview {
+  // ...
+}
+```
+
+## 📝 주석과 문서화
+
+### 함수 주석
+```typescript
+/**
+ * Cafe24 API에 리뷰를 업로드합니다.
+ * 
+ * @param reviews - 업로드할 리뷰 배열
+ * @param config - API 설정 (mallId, accessToken 포함)
+ * @returns 업로드 결과 (성공/실패 건수)
+ * @throws {AuthError} 토큰이 만료된 경우
+ * @throws {ApiError} API 호출 실패 시
+ */
+export async function uploadReviews(
+  reviews: Review[],
+  config: Cafe24Config
+): Promise<UploadResult> {
+  // ...
+}
+```
+
+### TODO 주석
+```typescript
+// TODO: [2024-01-15] 토큰 자동 갱신 로직 추가 필요
+// FIXME: 대용량 파일 업로드 시 메모리 문제 발생 가능
+// HACK: Cafe24 API의 버그 우회를 위한 임시 코드
+```
+
+## 🚫 최소 변경 원칙
+
+**중요**: 작업과 관련 없는 코드는 수정하지 않습니다.
+
+1. 기존 주석 유지
+2. 기존 포맷팅 유지
+3. 불필요한 정리 작업 지양
+4. 최소한의 코드 변경으로 목표 달성
+
+```
+코드 변경 = 버그 발생 가능성 + 기술 부채
+```
+
+## 🧪 테스트 용이한 코드
+
+```typescript
+// ❌ BAD: 테스트하기 어려운 코드 (외부 의존성 직접 사용)
+async function refreshToken() {
+  const stored = localStorage.getItem('refresh_token');
+  const response = await fetch('https://api.cafe24.com/oauth/token', { ... });
+  localStorage.setItem('access_token', response.token);
+}
+
+// ✅ GOOD: 의존성 주입으로 테스트 용이하게
+interface TokenStorage {
+  getRefreshToken(): string | null;
+  setAccessToken(token: string): void;
+}
+
+async function refreshToken(
+  storage: TokenStorage,
+  httpClient: HttpClient
+): Promise<void> {
+  const refreshToken = storage.getRefreshToken();
+  if (!refreshToken) throw new Error('No refresh token');
+  
+  const response = await httpClient.post('/oauth/token', { refreshToken });
+  storage.setAccessToken(response.token);
+}
+```

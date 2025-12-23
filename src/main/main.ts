@@ -1,13 +1,16 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
-import { exchangeAuthCode, loadStoredTokens, refreshAccessToken } from './services/auth';
+import { exchangeAuthCode, loadStoredTokens, refreshAccessToken, initiateOAuthFlow, type OAuthFlowConfig, type OAuthFlowResult } from './services/auth';
 import { uploadBulkReviews, submitSingleReview } from './services/review';
 import { AuthCodePayload, BulkUploadPayload, ReviewRequestPayload } from '../types/ipc';
 
 const isDev = process.env.NODE_ENV === 'development';
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+
+// Preload must always be JS (Electron doesn't support TS preload)
+// In dev: dist-electron/preload.js, In prod: same directory as main.js
 const preloadPath = isDev
-  ? path.join(__dirname, 'preload.ts')
+  ? path.join(process.cwd(), 'dist-electron', 'preload.js')
   : path.join(__dirname, 'preload.js');
 
 let mainWindow: BrowserWindow | null = null;
@@ -52,6 +55,20 @@ function registerIpcHandlers() {
 
   ipcMain.handle('auth:refresh', (_, config) => refreshAccessToken(config));
   ipcMain.handle('auth:load', () => loadStoredTokens());
+
+  ipcMain.handle('auth:start-flow', async (_, config: OAuthFlowConfig): Promise<OAuthFlowResult> => {
+    try {
+      const result = await initiateOAuthFlow(config);
+      return result;
+    } catch (error) {
+      console.error('[auth:start-flow] Unexpected error', error);
+      return {
+        success: false,
+        message: 'OAuth flow failed: ' + String(error),
+        errorCode: 'network_error',
+      };
+    }
+  });
 
   ipcMain.handle('review:submit', (_, payload: ReviewRequestPayload) =>
     submitSingleReview(payload.input, payload.config),

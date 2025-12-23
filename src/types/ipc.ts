@@ -1,5 +1,5 @@
 import { BulkServiceResponse, ReviewServiceResponse } from '../main/services/review';
-import { AuthResult, OAuthConfig } from '../main/services/auth';
+import { AuthResult, OAuthConfig, OAuthFlowConfig, OAuthFlowResult } from '../main/services/auth';
 import { ReviewInput } from './review';
 
 export interface AuthCodePayload {
@@ -21,3 +21,6 @@ export interface BulkUploadPayload {
 export type AuthChannelResponse = AuthResult;
 export type ReviewChannelResponse = ReviewServiceResponse;
 export type BulkChannelResponse = BulkServiceResponse;
+
+// Re-export OAuth flow types for use in IPC
+export type { OAuthFlowConfig, OAuthFlowResult };

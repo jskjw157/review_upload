@@ -1,0 +1,164 @@
+---
+description: Electron 데스크톱 앱 개발 가이드라인 - Main/Renderer 프로세스 아키텍처 및 IPC 통신 패턴
+globs: ["src/main/**/*.ts", "src/renderer/**/*.ts", "src/types/**/*.ts"]
+alwaysApply: false
+---
+
+# Electron 개발 가이드라인
+
+## 🏗️ 아키텍처 원칙
+
+### Main Process (src/main/)
+- **역할**: 시스템 리소스 접근, 파일 시스템, 네트워크 요청, 창 관리
+- **보안**: 절대로 사용자 입력을 직접 실행하지 않음
+- **리소스**: 무거운 연산은 Worker Thread로 분리 고려
+
+### Renderer Process (src/renderer/)
+- **역할**: UI 렌더링, 사용자 상호작용
+- **제한**: Node.js API 직접 접근 불가 (contextIsolation: true)
+- **통신**: preload.ts를 통한 contextBridge 사용
+
+### Preload Script (src/main/preload.ts)
+- **역할**: Main과 Renderer 간의 안전한 브릿지
+- **패턴**: 최소한의 API만 노출
+
+## 🔐 보안 베스트 프랙티스
+
+```typescript
+// ✅ GOOD: contextBridge를 통한 안전한 API 노출
+contextBridge.exposeInMainWorld('api', {
+  submitReview: (data: ReviewInput) => ipcRenderer.invoke('review:submit', data),
+  onProgress: (callback: (progress: number) => void) => {
+    ipcRenderer.on('upload:progress', (_, progress) => callback(progress));
+  },
+});
+
+// ❌ BAD: 전체 ipcRenderer 노출
+contextBridge.exposeInMainWorld('ipcRenderer', ipcRenderer);
+```
+
+## 📡 IPC 통신 패턴
+
+### Handle/Invoke 패턴 (양방향, Promise 기반)
+```typescript
+// Main Process
+ipcMain.handle('channel-name', async (event, payload: PayloadType) => {
+  try {
+    const result = await performOperation(payload);
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Renderer Process (via preload)
+const result = await window.api.channelName(payload);
+```
+
+### Send/On 패턴 (단방향, 이벤트 기반)
+```typescript
+// Main → Renderer (진행률 업데이트 등)
+mainWindow.webContents.send('upload:progress', progress);
+
+// Renderer에서 수신 (preload를 통해)
+ipcRenderer.on('upload:progress', (_, progress) => callback(progress));
+```
+
+## 📁 파일 구조 컨벤션
+
+```
+src/
+├── main/                 # Main Process
+│   ├── main.ts          # 앱 진입점, 창 관리
+│   ├── preload.ts       # contextBridge 정의
+│   └── services/        # 비즈니스 로직
+│       ├── auth.ts      # 인증 서비스
+│       └── review.ts    # 리뷰 업로드 서비스
+├── renderer/            # Renderer Process
+│   ├── main.ts         # UI 진입점
+│   └── services/       # UI 관련 서비스
+└── types/              # 공유 타입 정의
+    ├── global.d.ts     # window.api 타입
+    └── ipc.ts          # IPC 페이로드 타입
+```
+
+## ⚡ 성능 최적화
+
+### 창 생성 최적화
+```typescript
+// 창을 숨긴 상태로 생성 후 ready-to-show에서 표시
+mainWindow = new BrowserWindow({
+  show: false,  // 초기 숨김
+  // ...
+});
+
+mainWindow.once('ready-to-show', () => {
+  mainWindow?.show();
+});
+```
+
+### 대용량 데이터 전송
+```typescript
+// ❌ BAD: 큰 데이터를 직접 전송
+ipcMain.handle('upload', (_, hugeBuffer: Buffer) => { ... });
+
+// ✅ GOOD: 파일 경로 전달 또는 스트리밍
+ipcMain.handle('upload', (_, filePath: string) => {
+  const stream = fs.createReadStream(filePath);
+  // 스트리밍 처리
+});
+```
+
+## 🛡️ 타입 안전한 IPC
+
+```typescript
+// types/ipc.ts - 모든 IPC 채널과 페이로드 정의
+export interface IpcChannels {
+  'auth:exchange': {
+    request: AuthCodePayload;
+    response: TokenResponse;
+  };
+  'review:submit': {
+    request: ReviewRequestPayload;
+    response: ReviewResponse;
+  };
+}
+
+// 타입 안전한 invoke 래퍼
+type Channel = keyof IpcChannels;
+async function typedInvoke<C extends Channel>(
+  channel: C,
+  payload: IpcChannels[C]['request']
+): Promise<IpcChannels[C]['response']> {
+  return ipcRenderer.invoke(channel, payload);
+}
+```
+
+## 🔧 개발 환경 설정
+
+```typescript
+// 개발/프로덕션 환경 분기
+const isDev = process.env.NODE_ENV === 'development';
+
+if (isDev && devServerUrl) {
+  await window.loadURL(devServerUrl);
+  window.webContents.openDevTools({ mode: 'detach' });
+} else {
+  await window.loadFile(path.join(__dirname, 'index.html'));
+}
+```
+
+## ⚠️ 일반적인 실수 방지
+
+1. **Remote 모듈 사용 금지**: 보안 취약점 및 성능 저하
+2. **nodeIntegration: true 금지**: 보안 위험
+3. **sync IPC 메서드 지양**: `sendSync` 대신 `invoke` 사용
+4. **메모리 누수 주의**: 이벤트 리스너 정리
+
+```typescript
+// 이벤트 리스너 정리
+const cleanup = () => {
+  ipcRenderer.removeAllListeners('upload:progress');
+};
+// 컴포넌트 언마운트 시 호출
+```

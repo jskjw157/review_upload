@@ -1,0 +1,238 @@
+---
+description: Core project guidelines for Cafe24 Local Review Manager development
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Cafe24 Local Review Manager - Development Guidelines
+
+## 🎯 Project Overview
+
+**App Name:** Cafe24 Local Review Manager
+
+**Purpose:** A local desktop application that provides **automated review upload and management** functionality for Cafe24 shopping malls.
+
+**Tech Stack:**
+| Component | Technology |
+|-----------|------------|
+| Desktop Framework | Electron |
+| Language | TypeScript (ES2020+) |
+| Build Tool | Vite |
+| Backend Logic | Node.js |
+| HTTP Client | axios / fetch |
+| Authentication | OAuth 2.0 |
+| Platforms | macOS, Windows |
+
+---
+
+## 📍 Development Phases
+
+### Phase 1: Core Features (Current Focus)
+
+Implement the basic functionality defined in `README.md`:
+
+1. **OAuth Authentication**
+   - Cafe24 OAuth 2.0 login flow
+   - Access token acquisition and local storage
+   - Token refresh on expiration
+
+2. **Single Review Upload**
+   - Product selection dropdown
+   - Star rating input
+   - Review text input
+   - (Optional) Image attachment
+
+3. **Bulk Upload**
+   - CSV/Excel file selection
+   - File parsing and validation
+   - Batch API calls with progress tracking
+   - Success/failure logging
+
+4. **Upload History**
+   - Display uploaded review records
+   - Edit/delete options
+
+### Phase 2: Advanced Features (Future Roadmap)
+
+Clone and enhance features from **Cafe24 App Store review apps**:
+
+- [ ] Review moderation dashboard
+- [ ] AI-powered review sentiment analysis
+- [ ] Automated review response templates
+- [ ] Review analytics and reporting
+- [ ] Multi-store management
+- [ ] Review import from other platforms
+- [ ] Scheduled review publishing
+- [ ] Review incentive management (coupons/points)
+- [ ] Photo/video review enhanced support
+- [ ] Review SEO optimization tools
+
+---
+
+## 🏗️ Architecture Guidelines
+
+### Electron Process Model
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Main Process                         │
+│  (src/main/)                                           │
+│  ├── main.ts          → App lifecycle, window mgmt     │
+│  ├── preload.ts       → Secure IPC bridge              │
+│  └── services/                                         │
+│      ├── auth.ts      → OAuth token management         │
+│      └── review.ts    → Cafe24 API calls               │
+├─────────────────────────────────────────────────────────┤
+│                   Renderer Process                      │
+│  (src/renderer/)                                       │
+│  ├── main.ts          → UI entry point                 │
+│  └── services/                                         │
+│      └── mockReviewService.ts → Dev/test mocks         │
+├─────────────────────────────────────────────────────────┤
+│                    Shared Types                         │
+│  (src/types/)                                          │
+│  ├── global.d.ts      → Window API declarations        │
+│  ├── ipc.ts           → IPC channel/payload types      │
+│  └── review.ts        → Review data types              │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Principles
+
+1. **Security First**
+   - Always use `contextIsolation: true`
+   - Never expose `nodeIntegration` to renderer
+   - Validate all IPC payloads
+
+2. **Type Safety**
+   - Define all IPC channels with TypeScript interfaces
+   - Use strict null checks
+   - Avoid `any` type
+
+3. **Separation of Concerns**
+   - Main process: System access, API calls, file I/O
+   - Renderer process: UI rendering only
+   - Preload: Minimal, secure bridge
+
+---
+
+## 📁 Project Structure
+
+```
+review_upload/
+├── src/
+│   ├── main/                 # Electron Main Process
+│   │   ├── main.ts          # App entry point
+│   │   ├── preload.ts       # Context bridge
+│   │   └── services/        # Business logic
+│   │       ├── auth.ts      # OAuth handling
+│   │       └── review.ts    # Review API
+│   ├── renderer/            # Electron Renderer
+│   │   ├── main.ts          # UI logic
+│   │   └── services/        # UI services
+│   └── types/               # Shared TypeScript types
+├── index.html               # Renderer HTML
+├── styles.css               # Global styles
+├── vite.main.config.ts      # Vite config for main
+├── vite.renderer.config.ts  # Vite config for renderer
+└── README.md                # Project specification
+```
+
+---
+
+## 🔧 Development Workflow
+
+### Running the App
+
+```bash
+# Development mode (hot reload)
+npm run dev
+
+# Production build
+npm run build
+
+# Run built app
+npm run start
+```
+
+### Before Implementing Features
+
+1. **Check README.md** for feature specifications
+2. **Review existing code** for patterns and conventions
+3. **Consider Cafe24 API constraints** (rate limits, auth requirements)
+4. **Plan IPC communication** if Main-Renderer interaction needed
+
+### Code Quality Checklist
+
+- [ ] TypeScript strict mode compliance
+- [ ] Error handling with meaningful messages
+- [ ] IPC payloads properly typed
+- [ ] Sensitive data (tokens) securely stored
+- [ ] API rate limiting respected
+- [ ] User feedback for async operations
+
+---
+
+## 🎯 Implementation Priority
+
+When implementing features, follow this priority order:
+
+```
+HIGH PRIORITY (Phase 1):
+├── 1. OAuth authentication flow
+├── 2. Single review submission
+├── 3. Bulk upload from CSV/Excel
+└── 4. Upload history display
+
+MEDIUM PRIORITY (Phase 1 Enhancement):
+├── 5. Token auto-refresh
+├── 6. Error retry logic
+├── 7. Input validation
+└── 8. Progress indicators
+
+FUTURE (Phase 2):
+├── 9. Clone Cafe24 store app features
+├── 10. Advanced analytics
+└── 11. Multi-store support
+```
+
+---
+
+## 📚 Key References
+
+- **Project Spec:** `README.md`
+- **Cafe24 API:** See `cafe24-api.mdc` rule
+- **Electron Patterns:** See `electron.mdc` rule
+- **IPC Guidelines:** See `ipc-patterns.mdc` rule
+
+---
+
+## ⚠️ Common Pitfalls to Avoid
+
+1. **Token Management**
+   - Don't store tokens in renderer process
+   - Always check token expiry before API calls
+   - Handle refresh token rotation
+
+2. **File Handling**
+   - Use streams for large CSV/Excel files
+   - Validate file format before parsing
+   - Handle encoding issues (UTF-8, EUC-KR)
+
+3. **API Calls**
+   - Respect Cafe24 rate limits (5 req/sec)
+   - Handle network errors gracefully
+   - Implement exponential backoff for retries
+
+4. **Electron Security**
+   - Never use `eval()` or `Function()` in renderer
+   - Sanitize all user inputs
+   - Use secure IPC patterns only
+
+---
+
+## 🌐 Response Language
+
+- Code comments: English
+- User-facing messages: Korean (한국어)
+- Documentation: Follow existing file language

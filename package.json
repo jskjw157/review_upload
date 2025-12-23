@@ -1,13 +1,14 @@
 {
   "name": "review_upload",
   "version": "1.0.0",
-  "description": "Electron + Node.js + TypeScript \uae30\ubc18\uc758 \ub85c\uceec \ub9ac\ubdf0 \uc5c5\ub85c\ub4dc \ud504\ub85c\ud1a0\ud0c0\uc785",
+  "description": "Electron + Node.js + TypeScript 기반의 로컬 리뷰 업로드 프로토타입",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev": "npm run build:main && concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite dev --config vite.renderer.config.ts",
-    "dev:electron": "TS_NODE_TRANSPILE_ONLY=1 VITE_DEV_SERVER_URL=http://localhost:5173 NODE_ENV=development electron -r ts-node/register src/main/main.ts",
-    "build": "vite build --config vite.renderer.config.ts && vite build --config vite.main.config.ts",
+    "dev:electron": "VITE_DEV_SERVER_URL=http://localhost:5173 NODE_ENV=development NODE_OPTIONS='--import tsx' electron src/main/main.ts",
+    "build:main": "vite build --config vite.main.config.ts",
+    "build": "vite build --config vite.renderer.config.ts && npm run build:main",
     "start": "npm run build && electron dist-electron/main.js",
     "test": "echo \"No tests configured\""
   },
@@ -67,10 +68,30 @@
     "@electron-forge/maker-zip": "^7.10.2",
     "@electron-forge/plugin-vite": "^7.10.2",
     "@types/node": "^22.10.5",
+    "autoprefixer": "^10.4.23",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "concurrently": "^9.1.2",
     "electron": "^39.2.7",
+    "lucide-react": "^0.562.0",
+    "postcss": "^8.5.6",
+    "tailwind-merge": "^3.4.0",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   }
 }

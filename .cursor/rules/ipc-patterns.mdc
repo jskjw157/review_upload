@@ -1,0 +1,264 @@
+---
+description: Electron IPC 통신 패턴 및 타입 안전한 구현 가이드
+globs: ["src/main/**/*.ts", "src/renderer/**/*.ts", "src/types/ipc.ts"]
+alwaysApply: false
+---
+
+# IPC 통신 패턴 가이드
+
+## 📡 IPC 채널 네이밍 컨벤션
+
+### 패턴: `domain:action`
+```typescript
+// ✅ 권장 네이밍
+'auth:exchange'      // 인증 코드 교환
+'auth:refresh'       // 토큰 갱신
+'auth:load'          // 저장된 토큰 로드
+'review:submit'      // 단일 리뷰 제출
+'review:bulk'        // 대량 리뷰 업로드
+'file:select'        // 파일 선택 다이얼로그
+'window:minimize'    // 창 최소화
+
+// ❌ 피해야 할 네이밍
+'doSomething'        // 도메인 불명확
+'handle-auth'        // 일관성 없는 구분자
+'AUTH_EXCHANGE'      // 대문자 사용
+```
+
+## 🏗️ 타입 안전한 IPC 시스템
+
+### 1. 채널 정의 (types/ipc.ts)
+```typescript
+// 모든 IPC 채널과 페이로드 타입을 한 곳에서 관리
+export interface IpcChannelMap {
+  // 인증 관련
+  'auth:exchange': {
+    request: AuthCodePayload;
+    response: Promise<TokenResponse>;
+  };
+  'auth:refresh': {
+    request: Cafe24Config;
+    response: Promise<TokenResponse>;
+  };
+  'auth:load': {
+    request: void;
+    response: Promise<StoredTokens | null>;
+  };
+  
+  // 리뷰 관련
+  'review:submit': {
+    request: ReviewRequestPayload;
+    response: Promise<ReviewResponse>;
+  };
+  'review:bulk': {
+    request: BulkUploadPayload;
+    response: Promise<BulkUploadResponse>;
+  };
+}
+
+// 채널 이름 타입
+export type IpcChannel = keyof IpcChannelMap;
+```
+
+### 2. 타입 안전한 Main Process Handler
+```typescript
+// services/ipc-registry.ts
+import { ipcMain, IpcMainInvokeEvent } from 'electron';
+
+type IpcHandler<C extends IpcChannel> = (
+  event: IpcMainInvokeEvent,
+  payload: IpcChannelMap[C]['request']
+) => IpcChannelMap[C]['response'];
+
+function registerHandler<C extends IpcChannel>(
+  channel: C,
+  handler: IpcHandler<C>
+): void {
+  ipcMain.handle(channel, handler);
+}
+
+// 사용 예시
+registerHandler('auth:exchange', async (_, payload) => {
+  // payload는 자동으로 AuthCodePayload 타입
+  return exchangeAuthCode(payload.code, payload.config);
+});
+```
+
+### 3. 타입 안전한 Preload Bridge
+```typescript
+// preload.ts
+import { contextBridge, ipcRenderer } from 'electron';
+
+// 타입 안전한 invoke 래퍼
+function createInvoker<C extends IpcChannel>(channel: C) {
+  return (payload: IpcChannelMap[C]['request']): IpcChannelMap[C]['response'] => {
+    return ipcRenderer.invoke(channel, payload);
+  };
+}
+
+// API 노출
+contextBridge.exposeInMainWorld('api', {
+  auth: {
+    exchange: createInvoker('auth:exchange'),
+    refresh: createInvoker('auth:refresh'),
+    load: createInvoker('auth:load'),
+  },
+  review: {
+    submit: createInvoker('review:submit'),
+    bulk: createInvoker('review:bulk'),
+  },
+});
+```
+
+### 4. Renderer에서 사용
+```typescript
+// global.d.ts
+interface Window {
+  api: {
+    auth: {
+      exchange: (payload: AuthCodePayload) => Promise<TokenResponse>;
+      refresh: (config: Cafe24Config) => Promise<TokenResponse>;
+      load: () => Promise<StoredTokens | null>;
+    };
+    review: {
+      submit: (payload: ReviewRequestPayload) => Promise<ReviewResponse>;
+      bulk: (payload: BulkUploadPayload) => Promise<BulkUploadResponse>;
+    };
+  };
+}
+
+// 사용
+const tokens = await window.api.auth.exchange({ code, config });
+```
+
+## 🔄 양방향 통신 패턴
+
+### Main → Renderer 이벤트 (진행률 등)
+```typescript
+// types/ipc.ts에 이벤트 타입 추가
+export interface IpcEventMap {
+  'upload:progress': { current: number; total: number; percentage: number };
+  'upload:error': { message: string; code: string };
+  'upload:complete': { successCount: number; failCount: number };
+}
+
+// Main Process에서 전송
+function sendToRenderer<E extends keyof IpcEventMap>(
+  window: BrowserWindow,
+  event: E,
+  data: IpcEventMap[E]
+): void {
+  window.webContents.send(event, data);
+}
+
+// 사용
+sendToRenderer(mainWindow, 'upload:progress', {
+  current: 50,
+  total: 100,
+  percentage: 50,
+});
+
+// Preload에서 수신 핸들러 노출
+contextBridge.exposeInMainWorld('events', {
+  onProgress: (callback: (data: IpcEventMap['upload:progress']) => void) => {
+    ipcRenderer.on('upload:progress', (_, data) => callback(data));
+    return () => ipcRenderer.removeAllListeners('upload:progress');
+  },
+});
+```
+
+## 🛡️ 에러 처리 패턴
+
+### 표준화된 응답 포맷
+```typescript
+// types/ipc.ts
+export interface IpcResult<T> {
+  success: true;
+  data: T;
+}
+
+export interface IpcError {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+export type IpcResponse<T> = IpcResult<T> | IpcError;
+
+// Handler에서 사용
+ipcMain.handle('review:submit', async (_, payload): Promise<IpcResponse<ReviewData>> => {
+  try {
+    const data = await submitReview(payload);
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: {
+        code: 'REVIEW_SUBMIT_FAILED',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+    };
+  }
+});
+
+// Renderer에서 처리
+const result = await window.api.review.submit(payload);
+if (!result.success) {
+  showError(result.error.message);
+  return;
+}
+// result.data 사용
+```
+
+## 📊 대용량 데이터 전송
+
+### 파일 전송 최적화
+```typescript
+// ❌ BAD: 전체 버퍼를 IPC로 전송
+ipcMain.handle('file:upload', (_, buffer: Buffer) => {
+  // 큰 파일은 메모리 문제 발생 가능
+});
+
+// ✅ GOOD: 파일 경로만 전송하고 Main에서 처리
+ipcMain.handle('file:upload', async (_, filePath: string) => {
+  const buffer = await fs.promises.readFile(filePath);
+  return processFile(buffer);
+});
+
+// ✅ BETTER: 스트리밍 처리
+ipcMain.handle('file:upload', async (_, filePath: string) => {
+  return new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    const chunks: Buffer[] = [];
+    
+    stream.on('data', (chunk) => {
+      chunks.push(chunk);
+      // 진행률 전송
+      mainWindow?.webContents.send('upload:progress', {
+        current: chunks.length,
+        // ...
+      });
+    });
+    
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+});
+```
+
+## 🧹 리소스 정리
+
+### 이벤트 리스너 정리
+```typescript
+// Renderer (React 예시)
+useEffect(() => {
+  const cleanup = window.events.onProgress((data) => {
+    setProgress(data.percentage);
+  });
+  
+  return () => cleanup(); // 컴포넌트 언마운트 시 정리
+}, []);
+```
