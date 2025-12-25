@@ -65,8 +65,10 @@ interface TokenResponsePayload {
   access_token: string;
   refresh_token?: string;
   scope?: string;
+  scopes?: string[]; // Added: API returns scopes as array
   expires_in?: number;
-  expires_at?: number;
+  expires_at?: number | string; // Updated: API returns ISO string
+  refresh_token_expires_at?: string; // Added: API returns this
 }
 
 function getTokenEndpoint(mallId: string): string {
@@ -217,13 +219,40 @@ async function persistTokens(tokens: OAuthTokenSet): Promise<void> {
 
 function mapTokenResponse(payload: TokenResponsePayload, previousRefreshToken?: string): OAuthTokenSet {
   const now = Date.now();
-  const expiresInSeconds = payload.expires_in ?? 0;
-  const expiresAt = payload.expires_at ? payload.expires_at * 1000 : now + expiresInSeconds * 1000;
+  let expiresAt = now + 3600 * 1000; // Default 1 hour if all parsing fails
+
+  // Priority 1: Use expires_at if available (ISO string from API)
+  if (payload.expires_at) {
+    if (typeof payload.expires_at === 'string') {
+      const parsedDate = Date.parse(payload.expires_at);
+      if (!isNaN(parsedDate)) {
+        expiresAt = parsedDate;
+      } else {
+        console.warn('[auth] Failed to parse expires_at string:', payload.expires_at);
+      }
+    } else if (typeof payload.expires_at === 'number') {
+      // Handle timestamp case (legacy or different format)
+      // Cafe24 might return seconds or milliseconds? API docs say ISO string.
+      // If number is small (< 1e10), likely seconds. If large, ms.
+      // But assuming ISO string is standard now.
+      expiresAt = payload.expires_at * 1000;
+    }
+  }
+  // Priority 2: Use expires_in (seconds)
+  else if (payload.expires_in) {
+    expiresAt = now + payload.expires_in * 1000;
+  }
+
+  // Handle scopes: API returns 'scopes' array, we use 'scope' string internally
+  let scope = payload.scope;
+  if (!scope && payload.scopes && Array.isArray(payload.scopes)) {
+    scope = payload.scopes.join(' ');
+  }
 
   return {
     accessToken: payload.access_token,
     refreshToken: payload.refresh_token ?? previousRefreshToken ?? '',
-    scope: payload.scope,
+    scope,
     expiresAt,
     issuedAt: now,
   };
@@ -256,12 +285,11 @@ export async function exchangeAuthCode(code: string, config: OAuthConfig): Promi
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
     redirect_uri: config.redirectUri,
   });
 
   const endpoint = getTokenEndpoint(config.mallId);
+  const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
 
   console.log('[auth] Exchanging authorization code for tokens');
 
@@ -270,6 +298,7 @@ export async function exchangeAuthCode(code: string, config: OAuthConfig): Promi
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${credentials}`,
       },
       body: params,
     });
@@ -416,18 +445,17 @@ export async function refreshAccessToken(config: OAuthConfig): Promise<AuthResul
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: stored.refreshToken,
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    redirect_uri: config.redirectUri,
   });
 
   const endpoint = getTokenEndpoint(config.mallId);
+  const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${credentials}`,
       },
       body: params,
     });
